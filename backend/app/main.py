@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import get_settings
 from app.database import init_db
-from app.api import datasources, metadata, query
+from app.api import datasources, metadata, query, auth, charts, dashboards, share
 
 
 @asynccontextmanager
@@ -24,9 +24,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(datasources.router, prefix="/api/datasources", tags=["datasources"])
 app.include_router(metadata.router, prefix="/api/metadata", tags=["metadata"])
 app.include_router(query.router, prefix="/api/query", tags=["query"])
+app.include_router(charts.router, prefix="/api/charts", tags=["charts"])
+app.include_router(dashboards.router, prefix="/api/dashboards", tags=["dashboards"])
+app.include_router(share.router, prefix="/api/share", tags=["share"])
 
 
 @app.get("/api/health")

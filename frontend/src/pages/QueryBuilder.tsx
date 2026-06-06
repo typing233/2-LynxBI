@@ -8,6 +8,7 @@ import FilterBuilder from '../components/query/FilterBuilder';
 import AggregationPanel from '../components/query/AggregationPanel';
 import SQLPreview from '../components/query/SQLPreview';
 import ResultTable from '../components/query/ResultTable';
+import ChartBuilder from '../components/chart/ChartBuilder';
 
 export default function QueryBuilder() {
   const store = useQueryStore();
@@ -87,6 +88,9 @@ export default function QueryBuilder() {
             </Space>
           </div>
           <ResultTable />
+          <div style={{ marginTop: 24 }}>
+            <ChartBuilder />
+          </div>
         </Col>
       </Row>
     </div>

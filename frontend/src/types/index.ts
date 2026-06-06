@@ -69,3 +69,78 @@ export interface QueryResult {
   rows: Record<string, any>[];
   row_count: number;
 }
+
+// --- Chart types ---
+
+export interface ChartConfig {
+  title?: string;
+  xAxisLabel?: string;
+  yAxisLabel?: string;
+  colors?: string[];
+  showLegend?: boolean;
+  showGrid?: boolean;
+  categoryField?: string;
+  valueFields?: string[];
+}
+
+export interface SavedChart {
+  id: number;
+  user_id: number;
+  name: string;
+  chart_type: string;
+  datasource_id: number | null;
+  query_config: QueryRequest;
+  chart_config: ChartConfig;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// --- Dashboard types ---
+
+export interface DashboardItem {
+  id: number;
+  dashboard_id: number;
+  chart_id: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface DashboardFiltersConfig {
+  filters: QueryFilter[];
+}
+
+export interface Dashboard {
+  id: number;
+  user_id: number;
+  name: string;
+  description: string | null;
+  filters_config: DashboardFiltersConfig | null;
+  refresh_interval: number | null;
+  items: DashboardItem[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ShareLink {
+  id: number;
+  dashboard_id: number;
+  token: string;
+  is_enabled: boolean;
+  created_at?: string;
+}
+
+// --- Auth types ---
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  is_active: boolean;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+}
