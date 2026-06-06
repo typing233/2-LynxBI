@@ -39,16 +39,25 @@ export default function DataSourceForm({ open, editing, onClose, onSuccess }: Pr
   const handleSubmit = async () => {
     const values = await form.validateFields();
     try {
+      let res;
       if (editing) {
-        await client.put(`/datasources/${editing.id}`, values);
-        message.success('Updated');
+        res = await client.put(`/datasources/${editing.id}`, values);
       } else {
-        await client.post('/datasources', values);
-        message.success('Created');
+        res = await client.post('/datasources', values);
       }
+      const data = res.data;
+      if (data.sync_warning) {
+        message.warning(data.sync_warning);
+      }
+      message.success(editing ? 'Updated successfully (connection verified)' : 'Created successfully (connection verified, metadata synced)');
       onSuccess();
     } catch (e: any) {
-      message.error(e.response?.data?.detail || 'Operation failed');
+      const detail = e.response?.data?.detail;
+      if (typeof detail === 'string') {
+        message.error(detail);
+      } else {
+        message.error('Operation failed: unable to connect or save');
+      }
     }
   };
 

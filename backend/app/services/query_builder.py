@@ -1,6 +1,9 @@
-from sqlalchemy import Table, MetaData, Column as SAColumn, select, func, text, literal_column
-from sqlalchemy.ext.asyncio import AsyncEngine
-from app.schemas.query import QueryRequest, QueryField, QueryFilter
+from sqlalchemy import Column as SAColumn, Table, MetaData, select, func, String, Integer
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.sql import quoted_name
+from sqlalchemy import select as sa_select
+from app.schemas.query import QueryRequest
+from app.models.metadata_cache import MetadataTable, MetadataColumn
 
 AGGREGATE_FUNCTIONS = {
     "COUNT": func.count,
@@ -26,15 +29,63 @@ OPERATORS = {
 }
 
 
-def build_query(request: QueryRequest, engine: AsyncEngine):
-    metadata = MetaData()
-    table = Table(request.table, metadata, autoload_with=None)
+async def validate_and_build(request: QueryRequest, engine: AsyncEngine, db: AsyncSession):
+    """Validate table/fields against synced metadata, then build a safe SQL statement."""
 
-    # We'll build a raw column-based select since we don't have reflected metadata here
-    # Instead, use text-based column references with proper quoting via literal_column
+    # Fetch allowed table from metadata
+    result = await db.execute(
+        sa_select(MetadataTable).where(
+            MetadataTable.datasource_id == request.datasource_id,
+            MetadataTable.table_name == request.table,
+        )
+    )
+    meta_table = result.scalar_one_or_none()
+    if not meta_table:
+        raise ValueError(
+            f"Table '{request.table}' not found in synced metadata. "
+            "Please sync metadata first."
+        )
+
+    # Fetch allowed columns for this table
+    col_result = await db.execute(
+        sa_select(MetadataColumn).where(MetadataColumn.table_id == meta_table.id)
+    )
+    allowed_columns = {c.column_name for c in col_result.scalars().all()}
+
+    # Validate all referenced field names
+    referenced_fields = set()
+    for f in request.fields:
+        referenced_fields.add(f.name)
+    for f in request.filters:
+        referenced_fields.add(f.field)
+    for g in request.group_by:
+        referenced_fields.add(g)
+    for o in request.order_by:
+        referenced_fields.add(o.field)
+
+    invalid = referenced_fields - allowed_columns
+    if invalid:
+        raise ValueError(
+            f"Fields not found in table '{request.table}': {sorted(invalid)}. "
+            "Please sync metadata to update available fields."
+        )
+
+    # Build a proper SQLAlchemy Table with quoted identifiers
+    metadata = MetaData()
+    sa_table = Table(
+        request.table, metadata,
+        *[SAColumn(col_name, String) for col_name in allowed_columns],
+        quote=True,
+    )
+
+    # Resolve column references (always properly quoted via SA Column objects)
+    def get_col(name: str):
+        return sa_table.c[name]
+
+    # Build SELECT columns
     columns = []
     for field in request.fields:
-        col = literal_column(field.name)
+        col = get_col(field.name)
         if field.aggregate and field.aggregate.upper() in AGGREGATE_FUNCTIONS:
             agg_func = AGGREGATE_FUNCTIONS[field.aggregate.upper()]
             col = agg_func(col)
@@ -45,24 +96,24 @@ def build_query(request: QueryRequest, engine: AsyncEngine):
         columns.append(col)
 
     if not columns:
-        columns = [literal_column("*")]
+        columns = [sa_table]
 
-    stmt = select(*columns).select_from(text(request.table))
+    stmt = select(*columns).select_from(sa_table)
 
-    # Filters
+    # WHERE filters
     for f in request.filters:
-        col = literal_column(f.field)
+        col = get_col(f.field)
         op = f.operator.upper()
         if op in OPERATORS:
             stmt = stmt.where(OPERATORS[op](col, f.value))
 
-    # Group by
+    # GROUP BY
     if request.group_by:
-        stmt = stmt.group_by(*[literal_column(g) for g in request.group_by])
+        stmt = stmt.group_by(*[get_col(g) for g in request.group_by])
 
-    # Order by
+    # ORDER BY
     for ob in request.order_by:
-        col = literal_column(ob.field)
+        col = get_col(ob.field)
         if ob.aggregate and ob.aggregate.upper() in AGGREGATE_FUNCTIONS:
             agg_func = AGGREGATE_FUNCTIONS[ob.aggregate.upper()]
             col = agg_func(col)
@@ -72,7 +123,7 @@ def build_query(request: QueryRequest, engine: AsyncEngine):
             col = col.asc()
         stmt = stmt.order_by(col)
 
-    # Limit
+    # LIMIT
     if request.limit:
         stmt = stmt.limit(request.limit)
 

@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
 from app.database import get_db
 from app.models.datasource import DataSource
 from app.schemas.query import QueryRequest, QueryPreviewResponse, QueryExecuteResponse
 from app.services.connection_manager import connection_manager
-from app.services.query_builder import build_query, compile_sql
+from app.services.query_builder import validate_and_build, compile_sql
 
 router = APIRouter()
 
@@ -25,7 +24,10 @@ async def _get_engine(datasource_id: int, db: AsyncSession):
 @router.post("/preview", response_model=QueryPreviewResponse)
 async def preview_query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
     engine = await _get_engine(request.datasource_id, db)
-    stmt = build_query(request, engine)
+    try:
+        stmt = await validate_and_build(request, engine, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     sql = compile_sql(stmt, engine)
     return QueryPreviewResponse(sql=sql)
 
@@ -36,12 +38,16 @@ async def execute_query(request: QueryRequest, db: AsyncSession = Depends(get_db
         request.limit = MAX_ROWS
 
     engine = await _get_engine(request.datasource_id, db)
-    stmt = build_query(request, engine)
+    try:
+        stmt = await validate_and_build(request, engine, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     sql = compile_sql(stmt, engine)
 
     try:
         async with engine.connect() as conn:
-            result = await conn.execute(text(sql))
+            result = await conn.execute(stmt)
             columns = list(result.keys())
             rows = [dict(zip(columns, row)) for row in result.fetchall()]
     except Exception as e:

@@ -30,6 +30,7 @@ class DataSourceResponse(DataSourceBase):
     id: int
     created_at: datetime | None
     updated_at: datetime | None
+    sync_warning: str | None = None
 
     class Config:
         from_attributes = True
