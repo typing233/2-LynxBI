@@ -139,6 +139,12 @@ async def add_dashboard_item(
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Dashboard not found")
+    # Verify chart belongs to the current user
+    result = await db.execute(
+        select(Chart).where(Chart.id == data.chart_id, Chart.user_id == current_user.id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="Chart not found or not owned by you")
     item = DashboardItem(
         dashboard_id=dashboard_id,
         chart_id=data.chart_id,

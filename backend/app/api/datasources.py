@@ -4,22 +4,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.datasource import DataSource
+from app.models.user import User
 from app.schemas.datasource import DataSourceCreate, DataSourceUpdate, DataSourceResponse
 from app.utils.security import encrypt_password, decrypt_password
 from app.services.connection_manager import connection_manager
 from app.services.metadata_sync import sync_metadata
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
 
 @router.get("", response_model=list[DataSourceResponse])
-async def list_datasources(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(DataSource).order_by(DataSource.id))
+async def list_datasources(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DataSource).where(DataSource.user_id == current_user.id).order_by(DataSource.id)
+    )
     return result.scalars().all()
 
 
 @router.post("", response_model=DataSourceResponse, status_code=201)
-async def create_datasource(data: DataSourceCreate, db: AsyncSession = Depends(get_db)):
+async def create_datasource(
+    data: DataSourceCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     try:
         await connection_manager.test_connection(
             data.db_type, data.host, data.port, data.database, data.username, data.password
@@ -31,6 +42,7 @@ async def create_datasource(data: DataSourceCreate, db: AsyncSession = Depends(g
         )
 
     ds = DataSource(
+        user_id=current_user.id,
         name=data.name,
         db_type=data.db_type,
         host=data.host,
@@ -56,16 +68,31 @@ async def create_datasource(data: DataSourceCreate, db: AsyncSession = Depends(g
 
 
 @router.get("/{datasource_id}", response_model=DataSourceResponse)
-async def get_datasource(datasource_id: int, db: AsyncSession = Depends(get_db)):
-    ds = await db.get(DataSource, datasource_id)
+async def get_datasource(
+    datasource_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == datasource_id, DataSource.user_id == current_user.id)
+    )
+    ds = result.scalar_one_or_none()
     if not ds:
         raise HTTPException(status_code=404, detail="DataSource not found")
     return ds
 
 
 @router.put("/{datasource_id}", response_model=DataSourceResponse)
-async def update_datasource(datasource_id: int, data: DataSourceUpdate, db: AsyncSession = Depends(get_db)):
-    ds = await db.get(DataSource, datasource_id)
+async def update_datasource(
+    datasource_id: int,
+    data: DataSourceUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == datasource_id, DataSource.user_id == current_user.id)
+    )
+    ds = result.scalar_one_or_none()
     if not ds:
         raise HTTPException(status_code=404, detail="DataSource not found")
 
@@ -109,8 +136,15 @@ async def update_datasource(datasource_id: int, data: DataSourceUpdate, db: Asyn
 
 
 @router.delete("/{datasource_id}", status_code=204)
-async def delete_datasource(datasource_id: int, db: AsyncSession = Depends(get_db)):
-    ds = await db.get(DataSource, datasource_id)
+async def delete_datasource(
+    datasource_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == datasource_id, DataSource.user_id == current_user.id)
+    )
+    ds = result.scalar_one_or_none()
     if not ds:
         raise HTTPException(status_code=404, detail="DataSource not found")
     await connection_manager.remove_engine(datasource_id)
@@ -119,8 +153,15 @@ async def delete_datasource(datasource_id: int, db: AsyncSession = Depends(get_d
 
 
 @router.post("/{datasource_id}/test")
-async def test_datasource_connection(datasource_id: int, db: AsyncSession = Depends(get_db)):
-    ds = await db.get(DataSource, datasource_id)
+async def test_datasource_connection(
+    datasource_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == datasource_id, DataSource.user_id == current_user.id)
+    )
+    ds = result.scalar_one_or_none()
     if not ds:
         raise HTTPException(status_code=404, detail="DataSource not found")
     try:

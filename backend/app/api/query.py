@@ -1,18 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.database import get_db
 from app.models.datasource import DataSource
+from app.models.user import User
 from app.schemas.query import QueryRequest, QueryPreviewResponse, QueryExecuteResponse
 from app.services.connection_manager import connection_manager
 from app.services.query_builder import validate_and_build, compile_sql
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
 MAX_ROWS = 10000
 
 
-async def _get_engine(datasource_id: int, db: AsyncSession):
-    ds = await db.get(DataSource, datasource_id)
+async def _get_engine(datasource_id: int, user: User, db: AsyncSession):
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == datasource_id, DataSource.user_id == user.id)
+    )
+    ds = result.scalar_one_or_none()
     if not ds:
         raise HTTPException(status_code=404, detail="DataSource not found")
     return connection_manager.get_engine(
@@ -22,8 +28,12 @@ async def _get_engine(datasource_id: int, db: AsyncSession):
 
 
 @router.post("/preview", response_model=QueryPreviewResponse)
-async def preview_query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
-    engine = await _get_engine(request.datasource_id, db)
+async def preview_query(
+    request: QueryRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    engine = await _get_engine(request.datasource_id, current_user, db)
     try:
         stmt = await validate_and_build(request, engine, db)
     except ValueError as e:
@@ -33,11 +43,15 @@ async def preview_query(request: QueryRequest, db: AsyncSession = Depends(get_db
 
 
 @router.post("/execute", response_model=QueryExecuteResponse)
-async def execute_query(request: QueryRequest, db: AsyncSession = Depends(get_db)):
+async def execute_query(
+    request: QueryRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     if request.limit and request.limit > MAX_ROWS:
         request.limit = MAX_ROWS
 
-    engine = await _get_engine(request.datasource_id, db)
+    engine = await _get_engine(request.datasource_id, current_user, db)
     try:
         stmt = await validate_and_build(request, engine, db)
     except ValueError as e:

@@ -2,15 +2,33 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
+from app.models.datasource import DataSource
 from app.models.metadata_cache import MetadataTable, MetadataColumn
+from app.models.user import User
 from app.schemas.metadata import TableInfo, ColumnInfo, MetadataSyncResponse
 from app.services.metadata_sync import sync_metadata
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
 
+async def _verify_datasource_owner(datasource_id: int, user: User, db: AsyncSession) -> DataSource:
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == datasource_id, DataSource.user_id == user.id)
+    )
+    ds = result.scalar_one_or_none()
+    if not ds:
+        raise HTTPException(status_code=404, detail="DataSource not found")
+    return ds
+
+
 @router.post("/sync/{datasource_id}", response_model=MetadataSyncResponse)
-async def sync_datasource_metadata(datasource_id: int, db: AsyncSession = Depends(get_db)):
+async def sync_datasource_metadata(
+    datasource_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _verify_datasource_owner(datasource_id, current_user, db)
     try:
         count = await sync_metadata(datasource_id, db)
         return MetadataSyncResponse(
@@ -25,7 +43,12 @@ async def sync_datasource_metadata(datasource_id: int, db: AsyncSession = Depend
 
 
 @router.get("/{datasource_id}/tables", response_model=list[TableInfo])
-async def get_tables(datasource_id: int, db: AsyncSession = Depends(get_db)):
+async def get_tables(
+    datasource_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _verify_datasource_owner(datasource_id, current_user, db)
     result = await db.execute(
         select(MetadataTable)
         .where(MetadataTable.datasource_id == datasource_id)
@@ -36,7 +59,13 @@ async def get_tables(datasource_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{datasource_id}/tables/{table_name}/columns", response_model=list[ColumnInfo])
-async def get_columns(datasource_id: int, table_name: str, db: AsyncSession = Depends(get_db)):
+async def get_columns(
+    datasource_id: int,
+    table_name: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _verify_datasource_owner(datasource_id, current_user, db)
     result = await db.execute(
         select(MetadataTable)
         .where(MetadataTable.datasource_id == datasource_id, MetadataTable.table_name == table_name)

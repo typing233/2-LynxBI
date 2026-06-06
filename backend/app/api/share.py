@@ -32,7 +32,9 @@ async def get_shared_dashboard(token: str, db: AsyncSession = Depends(get_db)):
 
     charts_data = []
     for item in items:
-        result = await db.execute(sa_select(Chart).where(Chart.id == item.chart_id))
+        result = await db.execute(
+            sa_select(Chart).where(Chart.id == item.chart_id, Chart.user_id == dashboard.user_id)
+        )
         chart = result.scalar_one_or_none()
         if chart:
             charts_data.append({
@@ -64,6 +66,12 @@ async def execute_shared_query(token: str, body: dict, db: AsyncSession = Depend
     if not link or not link.is_enabled:
         raise HTTPException(status_code=404, detail="Share link not found or disabled")
 
+    # Get dashboard to verify owner
+    result = await db.execute(sa_select(Dashboard).where(Dashboard.id == link.dashboard_id))
+    dashboard = result.scalar_one_or_none()
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+
     chart_id = body.get("chart_id")
     extra_filters = body.get("filters", [])
 
@@ -76,7 +84,10 @@ async def execute_shared_query(token: str, body: dict, db: AsyncSession = Depend
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=403, detail="Chart not in this dashboard")
 
-    result = await db.execute(sa_select(Chart).where(Chart.id == chart_id))
+    # Only allow charts owned by the dashboard owner
+    result = await db.execute(
+        sa_select(Chart).where(Chart.id == chart_id, Chart.user_id == dashboard.user_id)
+    )
     chart = result.scalar_one_or_none()
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")

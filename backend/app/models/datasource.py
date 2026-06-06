@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, func
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func
 from app.database import Base
 
 
@@ -6,6 +6,7 @@ class DataSource(Base):
     __tablename__ = "datasources"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     db_type = Column(String(50), nullable=False)  # mysql | postgresql
     host = Column(String(255), nullable=False)
