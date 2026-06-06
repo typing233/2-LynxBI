@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.chart import Chart
+from app.models.datasource import DataSource
 from app.models.user import User
 from app.schemas.chart import ChartCreate, ChartUpdate, ChartResponse
 from app.dependencies import get_current_user
@@ -42,6 +43,12 @@ async def create_chart(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Verify datasource belongs to current user
+    result = await db.execute(
+        select(DataSource).where(DataSource.id == data.datasource_id, DataSource.user_id == current_user.id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="DataSource not found or not owned by you")
     chart = Chart(
         user_id=current_user.id,
         name=data.name,
@@ -89,6 +96,12 @@ async def update_chart(
     if data.chart_type is not None:
         chart.chart_type = data.chart_type
     if data.datasource_id is not None:
+        # Verify new datasource belongs to current user
+        ds_result = await db.execute(
+            select(DataSource).where(DataSource.id == data.datasource_id, DataSource.user_id == current_user.id)
+        )
+        if not ds_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="DataSource not found or not owned by you")
         chart.datasource_id = data.datasource_id
     if data.query_config is not None:
         chart.query_config = json.dumps(data.query_config)

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from app.database import get_db
 from app.models.user import User
+from app.models.datasource import DataSource
 from app.schemas.user import UserCreate, UserLogin, UserResponse, TokenResponse
 from app.utils.auth import hash_password, verify_password, create_token
 from app.dependencies import get_current_user
@@ -26,6 +27,13 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    # Assign any orphan datasources (user_id IS NULL) to the first registered user
+    await db.execute(
+        update(DataSource).where(DataSource.user_id.is_(None)).values(user_id=user.id)
+    )
+    await db.commit()
+
     token = create_token(user.id, user.username)
     return TokenResponse(access_token=token)
 

@@ -6,7 +6,7 @@ class DataSource(Base):
     __tablename__ = "datasources"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     db_type = Column(String(50), nullable=False)  # mysql | postgresql
     host = Column(String(255), nullable=False)

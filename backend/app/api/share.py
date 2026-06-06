@@ -97,10 +97,15 @@ async def execute_shared_query(token: str, body: dict, db: AsyncSession = Depend
     if extra_filters:
         filters.extend(extra_filters)
 
-    result = await db.execute(sa_select(DataSource).where(DataSource.id == chart.datasource_id))
+    result = await db.execute(
+        sa_select(DataSource).where(
+            DataSource.id == chart.datasource_id,
+            DataSource.user_id == dashboard.user_id,
+        )
+    )
     datasource = result.scalar_one_or_none()
     if not datasource:
-        raise HTTPException(status_code=404, detail="Datasource not found")
+        raise HTTPException(status_code=403, detail="Datasource not accessible")
 
     engine = connection_manager.get_engine(
         datasource.id, datasource.db_type, datasource.host, datasource.port,
